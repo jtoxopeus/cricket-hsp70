@@ -1,0 +1,688 @@
+setwd("~/Manuscripts/Hsp70 ms")
+
+#required libraries
+library(ggplot2)
+library(dunn.test)
+
+##custom ggplot theme for plots
+MyTheme <- theme(
+  panel.grid.major=element_blank(),
+  panel.grid.minor=element_blank(),
+  panel.background=element_blank(),
+  axis.line.x=element_line(colour="black", linewidth=0.5, linetype="solid"),
+  axis.line.y=element_line(colour="black", linewidth=0.5, linetype="solid"),
+  axis.text=element_text(colour="black", size=10),
+  axis.title.x=element_text(vjust=-0.3),
+  axis.title.y=element_text(vjust=0.35),
+  legend.title=element_blank(),
+  legend.key=element_rect(fill="white"),
+  legend.text=element_text(colour="black", size=10),
+  legend.position="right"
+)
+
+##################################################################
+##               Figure 2 - Heat shock survival                 ##
+##################################################################
+
+my.data <- read.csv("Hsp70 heat shock survival.csv")
+str(my.data)
+colnames(my.data)[1] <- "Temperature"
+my.model <- glm(cbind(Alive,Dead)~Temperature, binomial, my.data)
+
+summary(my.model)
+####Interpreting logistic regression
+#formula:
+#p = exp(y) / [1 + exp(y)], where: y = b0 + b1*x, and 
+#b0 and b1 are the coefficients from the model
+#p = exp(b0+b1*x)/[1+exp(b0+b1*x)]
+
+#creating a logistic regression line to plot
+x <- seq(38, 46, by=0.01) #x variable; temperature ranging from 38 to 46
+b0 <- my.model$coefficients[1] #coefficient 1 (intercept)
+b1 <- my.model$coefficients[2] #coefficient 2 (slope for Temperature)
+y <- exp(b0+b1*x)/(1+exp(b0+b1*x)) #y variable
+
+#plot
+par(mfrow=c(1,1), mar=c(4,4,1,0), las=1, cex=0.75, xpd=TRUE)
+
+plot(x=my.data$Temperature,y=my.data$Palive, xlim=c(38, 46), ylim=c(0,1),
+     xlab="", ylab="", axes=FALSE)
+axis(side=2, at=c(0,0.2,0.4,0.6,0.8,1), cex.axis=1,las=1,
+     labels = c(0,20,40,60,80,100), pos=37.5, tck=-0.01)
+lines(c(37.5,37.5),c(-0.025,1))
+axis(side=1, at=c(38,40,42,44,46), cex.axis=1,las=1,
+     labels = c(38,40,42,44,46), pos=-0.025, tck=-0.01)
+lines(c(37.5,46),c(-0.025,-0.025))
+mtext("Proportion (%) of crickets alive",side=2, line=2.5, las=0, cex=0.75)
+mtext("Temperature (?C)", side=1,padj=1, line=1.5,cex=0.75)
+
+lines(y ~ x, col="#888888") #logistic regression line
+points(my.data$Temperature, my.data$Palive, pch=16) #actual data points
+arrows(my.data$Temperature, my.data$Palive-my.data$SEP, #standard error of proportion
+       my.data$Temperature, my.data$Palive+my.data$SEP,
+       length=0.02, angle=90, code=3)
+
+#export as "Hsp70 heat shock survival" pdf 3.5 x 3"
+
+##################################################################
+##      Figure 5,6,7 - Relative mRNA abundance (panel A)        ##
+##################################################################
+
+my.data <- read.csv("qPCRdata_forR.csv")
+str(my.data)
+my.data$Tissue <- factor(my.data$Tissue, 
+                         levels = c("FB", "MT", "MG", "M", "NT"),
+                         labels=c("Fat body", "Malpighian tubules",
+                                  "Midgut", "Muscle", "Nervous Tissue"))
+
+     ########################################
+     ##       Figure 5A - heat shock       ##
+     ########################################
+
+#subsetting data for stats and plots
+heat.data <- my.data[which(my.data$Expt=="Heat"),]
+heat.data$Treatment <- factor(heat.data$Treatment, levels = c("HSCtrl", "HSR2", "HSR24"),
+                              labels=c("Control", "2 h post-heat", "24 h post-heat"))
+str(heat.data)
+FB <- heat.data[which(heat.data$Tissue=="FB"),]
+MT <- heat.data[which(heat.data$Tissue=="MT"),]
+MG <- heat.data[which(heat.data$Tissue=="MG"),]
+M <- heat.data[which(heat.data$Tissue=="M"),]
+NT <- heat.data[which(heat.data$Tissue=="NT"),]
+
+
+############################ plot #################################
+
+ggplot(heat.data, aes(x = Tissue, y = FoldChange, fill = Treatment)) + 
+  geom_boxplot() + scale_fill_manual(values = c("#FFFFFF","#FDBF6F","#FF7F00")) + 
+  labs(x="Tissue", y="Relative Hsp70 mRNA Abundance") +
+  scale_y_continuous(limits=c(0,12.5), expand=c(0,0)) +
+  MyTheme
+
+#export qPCR_Heat.pdf 6.5" x 3.5"
+
+############################ stats #################################
+
+### Fat body ANOVA: Hsp70 expression decreases 24 h post-heat shock
+FB.aov <- aov(DeltaDeltaCq ~ Treatment, data=FB)
+summary(FB.aov)
+#            Df Sum Sq Mean Sq F value   Pr(>F)    
+#Treatment    2 10.707   5.354   13.33 0.000183 ***
+#Residuals   21  8.434   0.402                 
+#---
+#Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+TukeyHSD(FB.aov)$Treatment #post-hoc test
+#                    diff        lwr       upr        p adj
+#HSR2-HSCtrl  -0.00973545 -0.8147145 0.7952436 0.9994878130
+#HSR24-HSCtrl  1.41139881  0.5847016 2.2380960 0.0008813988 ***
+#HSR24-HSR2    1.42113426  0.6449711 2.1972975 0.0004219732 ***
+
+### Malpighin tubules ANOVA: HSP expression increases 2 h post heat shock and
+### decreases to normal 24 h post heat shock
+MT.aov <- aov(DeltaDeltaCq ~ Treatment, data=MT)
+summary(MT.aov)
+#            Df Sum Sq Mean Sq F value  Pr(>F)   
+#Treatment    2  10.99   5.496   9.181 0.00148 **
+#Residuals   20  11.97   0.599                   
+#---
+#Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+TukeyHSD(MT.aov)$Treatment #post-hoc test
+#                    diff        lwr        upr       p adj
+#HSR2-HSCtrl  -1.47631944 -2.4274312 -0.5252077 0.002300784 **
+#HSR24-HSCtrl -0.06472222 -1.0963478  0.9669033 0.986216138
+#HSR24-HSR2    1.41159722  0.3544956  2.4686989 0.008029592 ***
+
+### Muscle (femur) ANOVA: Hsp70 expression increases 2 h and 24 h after heat shock
+M.aov <- aov(DeltaDeltaCq ~ Treatment, data=M)
+summary(M.aov)
+#            Df Sum Sq Mean Sq F value   Pr(>F)    
+#Treatment    2  41.56  20.778   38.38 1.42e-07 ***
+#Residuals   20  10.83   0.541                     
+#---
+#Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1 
+
+TukeyHSD(M.aov)$Treatment #post-hoc test
+#                  diff       lwr        upr        p adj
+#HSR2-HSCtrl  -2.590208 -3.553658 -1.6267582 3.757504e-06 ***
+#HSR24-HSCtrl -3.160208 -4.123658 -2.1967582 1.920629e-07 ***
+#HSR24-HSR2   -0.570000 -1.500781  0.3607813 2.901649e-01 
+
+### Midgut ANOVA: Hsp70 expression decreases 24 h post-heat shock
+MG.aov <- aov(DeltaDeltaCq ~ Treatment, data=MG)
+summary(MG.aov)
+#            Df Sum Sq Mean Sq F value   Pr(>F)    
+#Treatment    2  19.62   9.810   14.35 0.000136 ***
+#Residuals   20  13.67   0.683                     
+#---
+#Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+TukeyHSD(MG.aov)$Treatment #post-hoc test
+#                   diff        lwr       upr        p adj
+#HSR2-HSCtrl  -0.8574405 -1.9399655 0.2250846 1.371356e-01 
+#HSR24-HSCtrl  1.3411012  0.2585761 2.4236262 1.382897e-02 *
+#HSR24-HSR2    2.1985417  1.1527231 3.2443602 9.464156e-05 ***
+
+### Nervous tissue ANOVA: HSP expression increases 2 h post heat shock and
+### starts decreasing back to normal 24 h post heat
+NT.aov <- aov(DeltaDeltaCq ~ Treatment, data=NT)
+summary(NT.aov)
+#           Df Sum Sq Mean Sq F value   Pr(>F)    
+#Treatment    2 17.649   8.825   32.21 2.46e-06 ***
+#Residuals   16  4.384   0.274                      
+#---
+#Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+TukeyHSD(NT.aov)$Treatment #post-hoc test
+#                   diff        lwr       upr        p adj
+#HSR2-HSCtrl  -2.6976389 -3.5694772 -1.825801 1.629351e-06 ***
+#HSR24-HSCtrl -1.8155093 -2.6271466 -1.003872 8.058032e-05 ***
+#HSR24-HSR2    0.8821296  0.1702766  1.593983 1.464425e-02 *
+
+     ########################################
+     ##       Figure 6A - acclimation      ##
+     ########################################
+
+#subsetting data for stats and plots
+accl.data <- my.data[which(my.data$Expt=="Acclimation"),]
+accl.data$Treatment <- factor(accl.data$Treatment, levels = c("WK0", "WK3", "WK6"),
+                              labels=c("0 weeks", "3 weeks", "6 weeks"))
+str(accl.data)
+FB <- accl.data[which(accl.data$Tissue=="FB"),]
+MT <- accl.data[which(accl.data$Tissue=="MT"),]
+MG <- accl.data[which(accl.data$Tissue=="MG"),]
+M <- accl.data[which(accl.data$Tissue=="M"),]
+NT <- accl.data[which(accl.data$Tissue=="NT"),]
+
+############################ plot #################################
+ggplot(accl.data, aes(x = Tissue, y = FoldChange, fill = Treatment)) + 
+  geom_boxplot() + scale_fill_manual(values = c("#FFFFFF", "#EEEEEE", "#9E9E9E")) + 
+  labs(x="Tissue", y="Relative Hsp70 mRNA Abundance") +
+  scale_y_continuous(limits=c(0,6), expand=c(0,0)) +
+  MyTheme
+
+#export qPCRAcclimation.pdf 6.5" x 3.5"
+
+############################ stats #################################
+
+### Fat body ANOVA: Hsp70 expression increases from 0 to 6 weeks acclimation
+FB.aov <- aov(DeltaDeltaCq ~ Treatment, data=FB)
+summary(FB.aov)
+#            Df Sum Sq Mean Sq F value Pr(>F)  
+#Treatment    2  6.032  3.0162   4.025  0.034 *
+#Residuals   20 14.988  0.7494                  
+#---
+#Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+TukeyHSD(FB.aov)$Treatment #post-hoc test
+#              diff       lwr        upr      p adj
+#WK3-WK0 -0.8014286 -1.934946  0.3320885 0.19878031
+#WK6-WK0 -1.2620536 -2.395571 -0.1285365 0.02751966 *
+#WK6-WK3 -0.4606250 -1.555707  0.6344565 0.54649642
+
+### Malpighin tubules ANOVA: no effect of acclimation on Hsp70 expression
+MT.aov <- aov(DeltaDeltaCq ~ Treatment, data=MT)
+summary(MT.aov)
+#            Df Sum Sq Mean Sq F value Pr(>F)
+#Treatment    2   1.38  0.6889   0.392  0.681
+#Residuals   19  33.39  1.7572  
+
+### Midgut ANOVA: no effect of acclimation on Hsp70 expression
+MG.aov <- aov(DeltaDeltaCq ~ Treatment, data=MG)
+summary(MG.aov)
+#            Df Sum Sq  Mean Sq F value Pr(>F)
+#Treatment    2 0.0165 0.008243   0.401  0.676
+#Residuals   17 0.3498 0.020575 
+
+### Muscle (femur) ANOVA: no effect of acclimation on Hsp70 expression
+M.aov <- aov(DeltaDeltaCq ~ Treatment, data=M)
+summary(M.aov)
+#            Df Sum Sq Mean Sq F value Pr(>F)
+#Treatment    2 0.1778 0.08889   0.649  0.532
+#Residuals   22 3.0121 0.13691  
+
+### Nervous tissue ANOVA: Hsp70 expression increases from 0 to 3 to 6 weeks acclimation
+NT.aov <- aov(DeltaDeltaCq ~ Treatment, data=NT)
+summary(NT.aov)
+#           Df Sum Sq Mean Sq F value  Pr(>F)   
+#Treatment    2  2.971   1.486   8.841 0.00152 **
+#Residuals   22  3.697   0.168                     
+#---
+#Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+TukeyHSD(NT.aov)$Treatment #post-hoc test
+#              diff        lwr         upr     p adj
+#WK3-WK0 -0.5269813 -1.0273624 -0.02660017 0.0377750 *
+#WK6-WK0 -0.8534191 -1.3683070 -0.33853122 0.0011322 **
+#WK6-WK3 -0.3264379 -0.8268189  0.17394324 0.2509996
+
+     ########################################
+     ##       Figure 7A - freezing         ##
+     ########################################
+
+#subsetting data for stats and plots
+freeze.data <- my.data[which(my.data$Expt=="Freezing"),]
+freeze.data$Treatment <- factor(freeze.data$Treatment, 
+                                levels = c("FSCtrl", "FSR2", "FSR24"),
+                                labels=c("Control", "2 h post-freeze", "24 h post-freeze"))
+str(freeze.data)
+
+FB <- freeze.data[which(freeze.data$Tissue=="FB"),]
+MT <- freeze.data[which(freeze.data$Tissue=="MT"),]
+MG <- freeze.data[which(freeze.data$Tissue=="MG"),]
+M <- freeze.data[which(freeze.data$Tissue=="M"),]
+NT <- freeze.data[which(freeze.data$Tissue=="NT"),]
+
+############################ plot #################################
+ggplot(freeze.data, aes(x = Tissue, y = FoldChange, fill = Treatment)) + 
+  geom_boxplot() + scale_fill_manual(values = c("#9E9E9E","#A6CEE3","#1F78B4")) + 
+  labs(x="Tissue", y="Relative Hsp70 mRNA Abundance") +
+  scale_y_continuous(limits=c(0,3), expand=c(0,0)) +
+  MyTheme
+#export qPCR_Freezing.pdf 6.5" x 3.5"
+
+############################ stats #################################
+
+### Fat body ANOVA: Hsp70 expression does not change after freezing
+FB.aov <- aov(DeltaDeltaCq ~ Treatment, data=FB)
+summary(FB.aov)
+#            Df Sum Sq Mean Sq F value Pr(>F)
+#Treatment    2  0.751  0.3755   1.394  0.271
+#Residuals   20  5.386  0.2693 
+
+### Malpighin tubules ANOVA: Hsp70 expression does not change after freezing
+MT.aov <- aov(DeltaDeltaCq ~ Treatment, data=MT)
+summary(MT.aov)
+#            Df Sum Sq Mean Sq F value Pr(>F)
+#Treatment    2  0.033  0.0167   0.045  0.956
+#Residuals   23  8.508  0.3699  
+
+### Midgut ANOVA: Hsp70 expression does not change after freezing
+MG.aov <- aov(DeltaDeltaCq ~ Treatment, data=MG)
+summary(MG.aov)
+#            Df Sum Sq Mean Sq F value Pr(>F)
+#Treatment    2  0.088  0.0440   0.301  0.743
+#Residuals   21  3.072  0.1463  
+
+### Muscle (femur) ANOVA: Hsp70 expression does not change after freezing
+M.aov <- aov(DeltaDeltaCq ~ Treatment, data=M)
+summary(M.aov)
+#           Df Sum Sq Mean Sq F value Pr(>F)
+#Treatment    2   2.16  1.0798   1.733    0.2
+#Residuals   22  13.71  0.6231   
+
+### Nervous tissue ANOVA: Hsp70 expression does not change after freezing
+NT.aov <- aov(DeltaDeltaCq ~ Treatment, data=NT)
+summary(NT.aov)
+#            Df Sum Sq Mean Sq F value Pr(>F)
+#Treatment    2  2.349  1.1747   2.114  0.155
+#Residuals   15  8.337  0.5558 
+
+
+##################################################################
+##    Figure 5,6,7 - Relative protein abundance (panel B)       ##
+##################################################################
+
+my.data <- read.csv("Western_data_forR.csv")
+str(my.data)
+my.data$Tissue <- factor(my.data$Tissue, 
+                         levels = c("FB", "MT", "Mg", "M", "NS"),
+                         labels=c("Fat body", "Malpighian tubules",
+                                  "Midgut", "Muscle", "Nervous Tissue"))
+
+
+     ########################################
+     ##       Figure 5B - heat shock       ##
+     ########################################
+
+#subsetting data for stats and plots
+HS.data <- subset(my.data, my.data$Treatment=="HSC" | 
+                    my.data$Treatment=="HS2" | my.data$Treatment == "HS24")
+
+HS.data$Treatment <- factor(HS.data$Treatment, levels = c("HSC", "HS2", "HS24"),
+                            labels=c("Control", "2 h post-heat", "24 h post-heat"))
+
+HSC_Mdata<-subset(my.data$foldChange, my.data$Treatment=="HSC" & my.data$Tissue=="M")
+HSC_Mtdata<-subset(my.data$foldChange, my.data$Treatment=="HSC" & my.data$Tissue=="MT")
+HSC_Mgdata<-subset(my.data$foldChange, my.data$Treatment=="HSC" & my.data$Tissue=="Mg")
+HSC_NSdata<-subset(my.data$foldChange, my.data$Treatment=="HSC" & my.data$Tissue=="NS")
+HSC_FBdata<-subset(my.data$foldChange, my.data$Treatment=="HSC" & my.data$Tissue=="FB")
+
+HS2_Mdata<-subset(my.data$foldChange, my.data$Treatment=="HS2" & my.data$Tissue=="M")
+HS2_Mtdata<-subset(my.data$foldChange, my.data$Treatment=="HS2" & my.data$Tissue=="MT")
+HS2_Mgdata<-subset(my.data$foldChange, my.data$Treatment=="HS2" & my.data$Tissue=="Mg")
+HS2_NSdata<-subset(my.data$foldChange, my.data$Treatment=="HS2" & my.data$Tissue=="NS")
+HS2_FBdata<-subset(my.data$foldChange, my.data$Treatment=="HS2" & my.data$Tissue=="FB")
+
+HS24_Mdata<-subset(my.data$foldChange, my.data$Treatment=="HS24" & my.data$Tissue=="M")
+HS24_Mtdata<-subset(my.data$foldChange, my.data$Treatment=="HS24" & my.data$Tissue=="MT")
+HS24_Mgdata<-subset(my.data$foldChange, my.data$Treatment=="HS24" & my.data$Tissue=="Mg")
+HS24_NSdata<-subset(my.data$foldChange, my.data$Treatment=="HS24" & my.data$Tissue=="NS")
+HS24_FBdata<-subset(my.data$foldChange, my.data$Treatment=="HS24" & my.data$Tissue=="FB")
+
+############################ plot ################################
+ggplot(HS.data, aes(x = Tissue, y = foldChange, fill = Treatment)) + 
+  geom_boxplot() + scale_fill_manual(values = c("#FFFFFF","#FDBF6F","#FF7F00")) + 
+  labs(x="Tissue", y="Relative Hsp70 Protein Abundance") +
+  scale_y_continuous(limits=c(0,5.2), expand=c(0,0)) +
+  MyTheme
+
+#export Western_Heat.pdf 6.5" x 3.5"
+
+############################ stats #################################
+##Fat body: 
+#there is an effect of heat shock on Hsp70 relative protein
+#2 h and 24 h post-heat shock, Hsp70 levels are higher than controls (never heat shocked)
+x<-c(HSC_FBdata)
+y<-c(HS2_FBdata)
+z<-c(HS24_FBdata)
+kruskal.test(list(x,y,z))
+#Kruskal-Wallis rank sum test
+#data:  list(x, y, z)
+#Kruskal-Wallis chi-squared = 7.7143, df = 2, p-value = 0.02113
+
+#Conducting post-hoc, bonferroni dunn test 
+dunn_result <- dunn.test(list(x, y, z), method = "bonferroni") 
+
+#Comparison of x by group                            
+#(Bonferroni)                                  
+#Col Mean-|
+#Row Mean |          1          2
+#---------+----------------------
+#.      2 |  -2.405351
+#.        |    0.0242*
+#.        |
+#.      3 |  -2.405351   0.000000
+#.        |    0.0242*     1.0000
+
+#alpha = 0.05
+#Reject Ho if p <= alpha/2
+
+##Malpighian tubules: 
+#there is an effect of heat shock on Hsp70 relative protein
+#24 h post-heat shock, Hsp70 levels are higher than controls (never heat shocked)
+x<-c(HSC_Mtdata)
+y<-c(HS2_Mtdata)
+z<-c(HS24_Mtdata)
+kruskal.test(list(x,y,z))
+#Kruskal-Wallis rank sum test
+#data:  list(x, y, z)
+#Kruskal-Wallis chi-squared = 7.5593, df = 2, p-value = 0.02283
+
+#Conducting post-hoc, bonferroni dunn test 
+dunn_result <- dunn.test(list(x, y, z), method = "bonferroni") 
+#Comparison of x by group                            
+#(Bonferroni)                                  
+# Col Mean-|
+# Row Mean |          1          2
+#.---------+----------------------
+#.       2 |  -0.881598
+#.         |     0.5670
+#.         |
+#.       3 |  -2.649075  -1.889512
+#.         |    0.0121*     0.0882
+
+#alpha = 0.05
+#Reject Ho if p <= alpha/2
+
+
+##Midgut:
+#there is an effect of heat shock on Hsp70 relative protein
+#there is a trend toward higher Hsp70 levels 2 h and 24 h post-heat shock
+
+x<-c(HSC_Mgdata)
+y<-c(HS2_Mgdata)
+z<-c(HS24_Mgdata)
+kruskal.test(list(x,y,z))
+#ruskal-Wallis rank sum test
+#data:  list(x, y, z)
+#Kruskal-Wallis chi-squared = 6.5764, df = 2, p-value = 0.03732
+
+#Conducting post-hoc, bonferroni dunn test 
+dunn_result <- dunn.test(list(x, y, z), method = "bonferroni") 
+#Comparison of x by group                            
+#(Bonferroni)                                  
+#Col Mean-|
+#Row Mean |          1          2
+#---------+----------------------
+#.      2 |  -2.311250
+#.        |     0.0312
+#.        |
+#.      3 |  -2.092759   0.149482
+#.        |     0.0546     1.0000
+
+#alpha = 0.05
+#Reject Ho if p <= alpha/2
+
+##Muscle: 
+#there is an effect of heat shock on Hsp70 relative protein
+#24 h post-heat shock, Hsp70 levels are higher than controls (never heat shocked)
+
+x<-c(HSC_Mdata)
+y<-c(HS2_Mdata)
+z<-c(HS24_Mdata)
+kruskal.test(list(x,y,z))
+#Kruskal-Wallis rank sum test
+#data:  list(x, y, z)
+#Kruskal-Wallis chi-squared = 7.5206, df = 2, p-value = 0.02328
+
+#Conducting post-hoc, bonferroni dunn test 
+dunn_result <- dunn.test(list(x, y, z), method = "bonferroni")
+
+#Comparison of x by group                            
+#(Bonferroni)                                  
+#Col Mean-|
+#Row Mean |          1          2
+#---------+----------------------
+#.      2 |  -1.146934
+#.        |     0.3771
+#.        |
+#.      3 |  -2.704710  -1.665332
+#.        |    0.0103*     0.1438
+
+#alpha = 0.05
+#Reject Ho if p <= alpha/2
+
+##Nervous tissue: 
+#there is no of heat shock on Hsp70 relative protein
+
+x<-c(HSC_NSdata)
+y<-c(HS2_NSdata)
+z<-c(HS24_NSdata)
+kruskal.test(list(x,y,z))
+#Kruskal-Wallis rank sum test
+#data:  list(x, y, z)
+#Kruskal-Wallis chi-squared = 2.6449, df = 2, p-value = 0.2665
+
+     ########################################
+     ##       Figure 6B - acclimation      ##
+     ########################################
+
+#subsetting data for stats and plots
+Accl.data <- subset(my.data, my.data$Treatment=="0wk" | my.data$Treatment=="6wk")
+
+Accl.data$Treatment <- factor(Accl.data$Treatment, levels = c("0wk", "6wk"),
+                              labels=c("0 weeks", "6 weeks"))
+
+wk0_Mdata<-subset(my.data$foldChange, my.data$Treatment=="0wk" & my.data$Tissue=="M")
+wk0_Mtdata<-subset(my.data$foldChange, my.data$Treatment=="0wk" & my.data$Tissue=="MT")
+wk0_Mgdata<-subset(my.data$foldChange, my.data$Treatment=="0wk" & my.data$Tissue=="Mg")
+wk0_NSdata<-subset(my.data$foldChange, my.data$Treatment=="0wk" & my.data$Tissue=="NS")
+wk0_FBdata<-subset(my.data$foldChange, my.data$Treatment=="0wk" & my.data$Tissue=="FB")
+
+wk6_Mdata<-subset(my.data$foldChange, my.data$Treatment=="6wk" & my.data$Tissue=="M")
+wk6_Mtdata<-subset(my.data$foldChange, my.data$Treatment=="6wk" & my.data$Tissue=="MT")
+wk6_Mgdata<-subset(my.data$foldChange, my.data$Treatment=="6wk" & my.data$Tissue=="Mg")
+wk6_NSdata<-subset(my.data$foldChange, my.data$Treatment=="6wk" & my.data$Tissue=="NS")
+wk6_FBdata<-subset(my.data$foldChange, my.data$Treatment=="6wk" & my.data$Tissue=="FB")
+
+############################ plot ################################
+ggplot(Accl.data, aes(x = Tissue, y = foldChange, fill = Treatment)) + 
+  geom_boxplot() + scale_fill_manual(values = c("#FFFFFF","#9E9E9E")) + 
+  labs(x="Tissue", y="Relative Hsp70 Protein Abundance") +
+  scale_y_continuous(limits=c(0,4), expand=c(0,0)) +
+  MyTheme
+
+#export Western_Acclimation.pdf 6.5" x 3.5"
+
+############################ stats #################################
+
+##Fat body: 
+#there is no effect of acclimation on Hsp70 relative protein
+
+wilcox.test(wk0_FBdata, wk6_FBdata, alternative = "less")
+#Wilcoxon rank sum exact test
+#data:  wk0_FBdata and wk6_FBdata
+#W = 34, p-value = 0.3024
+#alternative hypothesis: true location shift is less than 0
+
+##Malpighian tubules: 
+#there is no effect of acclimation on Hsp70 relative protein
+
+wilcox.test(wk0_Mtdata, wk6_Mtdata, alternative = "less")
+#Wilcoxon rank sum exact test
+#data:  wk0_Mtdata and wk6_Mtdata
+#W = 44, p-value = 0.6348
+#alternative hypothesis: true location shift is less than 0
+
+##Midgut: 
+#there is no effect of acclimation on Hsp70 relative protein
+
+wilcox.test(wk0_Mgdata, wk6_Mgdata, alternative = "less")
+#Wilcoxon rank sum exact test
+#data:  wk0_Mgdata and wk6_Mgdata
+#W = 36, p-value = 0.5187
+#alternative hypothesis: true location shift is less than 0
+
+##Muscle: 
+#Hsp70 protein abundance is higher in freeze-tolerant (acclimated) crickets
+
+wilcox.test(wk0_Mdata, wk6_Mdata, alternative = "less")
+#Wilcoxon rank sum exact test
+#data:  wk0_Mdata and wk6_Mdata
+#W = 7, p-value = 0.001851
+#alternative hypothesis: true location shift is less than 0
+
+##Nervous tissue: 
+#there is no effect of acclimation on Hsp70 relative protein
+
+wilcox.test(wk0_NSdata, wk6_NSdata, alternative = "less")
+#Wilcoxon rank sum exact test
+#data:  wk0_NSdata and wk6_NSdata
+#W = 43, p-value = 0.7596
+#alternative hypothesis: true location shift is less than 0
+
+     ########################################
+     ##       Figure 7B - freezing         ##
+     ########################################
+
+#subsetting data for stats and plots
+Freeze.data <- subset(my.data, my.data$Treatment=="CSC" | 
+                        my.data$Treatment=="CS2" | my.data$Treatment == "CS24")
+
+Freeze.data$Treatment <- factor(Freeze.data$Treatment, levels = c("CSC", "CS2", "CS24"),
+                                labels=c("Control", "2 h post-freeze", "24 h post-freeze"))
+
+CSC_Mdata<-subset(my.data$foldChange, my.data$Treatment=="CSC" & my.data$Tissue=="M")
+CSC_Mtdata<-subset(my.data$foldChange, my.data$Treatment=="CSC" & my.data$Tissue=="MT")
+CSC_Mgdata<-subset(my.data$foldChange, my.data$Treatment=="CSC" & my.data$Tissue=="Mg")
+CSC_NSdata<-subset(my.data$foldChange, my.data$Treatment=="CSC" & my.data$Tissue=="NS")
+CSC_FBdata<-subset(my.data$foldChange, my.data$Treatment=="CSC" & my.data$Tissue=="FB")
+
+CS2_Mdata<-subset(my.data$foldChange, my.data$Treatment=="CS2" & my.data$Tissue=="M")
+CS2_Mtdata<-subset(my.data$foldChange, my.data$Treatment=="CS2" & my.data$Tissue=="MT")
+CS2_Mgdata<-subset(my.data$foldChange, my.data$Treatment=="CS2" & my.data$Tissue=="Mg")
+CS2_NSdata<-subset(my.data$foldChange, my.data$Treatment=="CS2" & my.data$Tissue=="NS")
+CS2_FBdata<-subset(my.data$foldChange, my.data$Treatment=="CS2" & my.data$Tissue=="FB")
+
+CS24_Mdata<-subset(my.data$foldChange, my.data$Treatment=="CS24" & my.data$Tissue=="M")
+CS24_Mtdata<-subset(my.data$foldChange, my.data$Treatment=="CS24" & my.data$Tissue=="MT")
+CS24_Mgdata<-subset(my.data$foldChange, my.data$Treatment=="CS24" & my.data$Tissue=="Mg")
+CS24_NSdata<-subset(my.data$foldChange, my.data$Treatment=="CS24" & my.data$Tissue=="NS")
+CS24_FBdata<-subset(my.data$foldChange, my.data$Treatment=="CS24" & my.data$Tissue=="FB")
+
+############################ plot ################################
+ggplot(Freeze.data, aes(x = Tissue, y = foldChange, fill = Treatment)) + 
+  geom_boxplot() + scale_fill_manual(values = c("#9E9E9E","#A6CEE3","#1F78B4")) + 
+  labs(x="Tissue", y="Relative Hsp70 Protein Abundance") +
+  scale_y_continuous(limits=c(0,4), expand=c(0,0)) +
+  MyTheme
+
+#export Western_Freezing.pdf 6.5" x 3.5"
+
+############################ stats #################################
+
+##Fat body: 
+#there is no effect of freezing on Hsp70 relative protein
+
+x<-c(CSC_FBdata)
+y<-c(CS2_FBdata)
+z<-c(CS24_FBdata)
+kruskal.test(list(x,y,z))
+#Kruskal-Wallis rank sum test
+#data:  list(x, y, z)
+#Kruskal-Wallis chi-squared = 0.38557, df = 2, p-value = 0.8247
+
+#Mann-Whitney tests 
+
+##Malpighian tubules: 
+#there is no effect of freezing on Hsp70 relative protein
+
+x<-c(CSC_Mtdata)
+y<-c(CS2_Mtdata)
+z<-c(CS24_Mtdata)
+kruskal.test(list(x,y,z))
+#Kruskal-Wallis rank sum test
+#data:  list(x, y, z)
+#Kruskal-Wallis chi-squared = 2.4797, df = 2, p-value = 0.2894
+
+##Midgut: 
+#there is an effect of freezing on Hsp70 relative protein
+#24h post freeze treatment, Hsp70 levels are lower compared to controls (never frozen)
+
+x<-c(CSC_Mgdata)
+y<-c(CS2_Mgdata)
+z<-c(CS24_Mgdata)
+kruskal.test(list(x,y,z))
+#Kruskal-Wallis rank sum test
+#data:  list(x, y, z)
+#Kruskal-Wallis chi-squared = 7.5923, df = 2, p-value = 0.02246
+
+#Conducting post-hoc, bonferroni dunn test 
+dunn_result <- dunn.test(list(x, y, z), method = "bonferroni")
+#Comparison of x by group                            
+#(Bonferroni)                                  
+##Col Mean-|
+# Row Mean |          1          2
+##---------+----------------------
+#######  2 |  -0.343791
+###########|     1.0000
+#          |
+#.       3 |   2.417083   2.273016
+#.         |    0.0235*     0.0345
+
+#alpha = 0.05
+#Reject Ho if p <= alpha/2
+
+##Muscle: 
+#there is no effect of freezing on Hsp70 relative protein
+
+x<-c(CSC_Mdata)
+y<-c(CS2_Mdata)
+z<-c(CS24_Mdata)
+kruskal.test(list(x,y,z))
+#Kruskal-Wallis rank sum test
+#data:  list(x, y, z)
+#Kruskal-Wallis chi-squared = 0.18342, df = 2, p-value = 0.9124
+
+##Nervous tissue: 
+#there is no effect of freezing on Hsp70 relative protein
+
+x<-c(CSC_NSdata)
+y<-c(CS2_NSdata)
+z<-c(CS24_NSdata)
+kruskal.test(list(x,y,z))
+#Kruskal-Wallis rank sum test
+#data:  list(x, y, z)
+#Kruskal-Wallis chi-squared = 0.6067, df = 2, p-value = 0.7383
